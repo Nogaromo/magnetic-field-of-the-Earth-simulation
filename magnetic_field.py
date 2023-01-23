@@ -1,11 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from tqdm import tqdm
+from scipy.integrate import odeint
 from mpl_toolkits import mplot3d
+
 
 g_1_0 = -29404.8 * 1e-9
 g_1_1 = -1450.9 * 1e-9
 h_1_1 = 4652.5 * 1e-9
+c = 3 * 1e8
 
 
 def B_dip(r, theta, phi, R=6400*1e3):
@@ -21,6 +23,7 @@ def transform(theta, phi):
                   [np.cos(theta)*np.cos(phi), np.cos(theta)*np.sin(phi), -np.sin(theta)],
                   [-np.sin(theta), np.cos(phi), 0]])
     return C
+
 
 def plot_B(B):
     fig = plt.figure()
@@ -44,22 +47,59 @@ def B_xyz(x, y, z):
     phi = np.arctan(y / x)
     B_spher = B_dip(r, theta, phi)
     C = transform(theta, phi)
-    return B_spher @ C
+    B = B_spher @ C
+    #print(B_spher.shape, C.shape)
+    #print(B[0])
+    return B[0]
     
 
-#n = 10
-#theta = [x * np.pi / n for x in range(n)]
-#phi = [x * 2 * np.pi / n for x in range(n)]
-#r = [6400*1e3*(1+x/5) for x in range(n)]
-#B = np.zeros((n**3, 3))
-#count = 0
-#for i in tqdm(range(n)):
-    #for j in range(n):
-        #for k in range(n):
-            #B_spher = B_dip(r[i], theta[j], phi[k])
-            #C = transform(theta[j], phi[k])
-            #B_xyz = B_spher @ C
-            #B[count] = B_xyz
-            #count += 1
-            
-#plot_B(B)
+def eqn(y, t, e=1.6e-19, m=1.67e-27):
+    gamma = e / m
+    y_1, y_2, y_3, y_4, y_5, y_6 = y
+    B_x, B_y, B_z = B_xyz(y_1, y_3, y_5)
+    dydt = [y_2, gamma*(y_4 * B_z - y_6 * B_y), y_4, -gamma*(y_2 * B_z - y_6 * B_x), y_6, gamma*(y_2 * B_y - y_4 * B_x)]
+    return dydt
+
+
+def plot_xyz(t, x, y, z):
+    plt.figure(dpi=200)
+    plt.grid()
+    plt.plot(t, x, label='x(t)')
+    plt.plot(t, y, label='y(t)')
+    plt.plot(t, z, label='z(t)')
+    plt.legend(loc='best')
+    plt.xlabel('t')
+    plt.show()
+
+
+def plot_sphere(r=6400 * 1e3):
+    plt.rcParams["figure.autolayout"] = True
+    #fig = plt.figure()
+    #ax = fig.add_subplot(projection='3d')
+    u, v = np.mgrid[0:2 * np.pi:30j, 0:np.pi:20j]
+    ax.plot_surface(r * np.cos(u) * np.sin(v), r * np.sin(u) * np.sin(v), r * np.cos(v), cmap=plt.cm.YlGnBu_r)
+    #plt.show()
+
+
+x0 = 6400 * 1e3 * 3
+y0 = 6400 * 1e3 * 3
+z0 = 6400 * 1e3 * 3
+v_0_x = 1.38 * 1e7 / np.sqrt(3)
+v_0_y = 1.38 * 1e7 / np.sqrt(3)
+v_0_z = 1.38 * 1e7 / np.sqrt(3)
+initial_cond = [x0, v_0_x, y0, v_0_y, z0, v_0_z]
+t = np.linspace(0, 1000, 10000)
+sol = odeint(eqn, initial_cond, t)
+
+x = sol[:, 0]
+y = sol[:, 2]
+z = sol[:, 4]
+v_x = sol[:, 1]
+v_y = sol[:, 3]
+v_z = sol[:, 5]
+plot_xyz(t, x, y, z)
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+plot_sphere()
+ax.plot(x, y, z)
+plt.show()
