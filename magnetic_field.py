@@ -38,19 +38,28 @@ def plot_B(B):
     plt.show()
 
 
-n = 10
-theta = [x * np.pi / n for x in range(n)]
-phi = [x * 2 * np.pi / n for x in range(n)]
-r = [6400*1e3*(1+x/5) for x in range(n)]
-B = np.zeros((n**3, 3))
-count = 0
-for i in tqdm(range(n)):
-    for j in range(n):
-        for k in range(n):
-            B_spher = B_dip(r[i], theta[j], phi[k])
-            C = transform(theta[j], phi[k])
-            B_xyz = B_spher @ C
-            B[count] = B_xyz
-            count += 1
+def B_xyz(x, y, z):
+    r = np.sqrt(x**2+y**2+z**2)
+    theta = np.arccos(z / r)
+    phi = np.arctan(y / x)
+    B_spher = B_dip(r, theta, phi)
+    C = transform(theta, phi)
+    return B_spher @ C
+    
+
+#n = 10
+#theta = [x * np.pi / n for x in range(n)]
+#phi = [x * 2 * np.pi / n for x in range(n)]
+#r = [6400*1e3*(1+x/5) for x in range(n)]
+#B = np.zeros((n**3, 3))
+#count = 0
+#for i in tqdm(range(n)):
+    #for j in range(n):
+        #for k in range(n):
+            #B_spher = B_dip(r[i], theta[j], phi[k])
+            #C = transform(theta[j], phi[k])
+            #B_xyz = B_spher @ C
+            #B[count] = B_xyz
+            #count += 1
             
-plot_B(B)
+#plot_B(B)
