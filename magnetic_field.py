@@ -1,7 +1,12 @@
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import odeint
 from mpl_toolkits import mplot3d
+from vispy import plot as vp
+import vispy
+from vispy import scene
+vispy.app.use_app("pyqt6")
 
 
 g_1_0 = -29404.8 * 1e-9
@@ -48,8 +53,6 @@ def B_xyz(x, y, z):
     B_spher = B_dip(r, theta, phi)
     C = transform(theta, phi)
     B = B_spher @ C
-    #print(B_spher.shape, C.shape)
-    #print(B[0])
     return B[0]
     
 
@@ -81,6 +84,23 @@ def plot_sphere(r=6400 * 1e3):
     #plt.show()
 
 
+def plot_with_gpu(x, y, z, magnetic_field=None):
+    canvas = scene.SceneCanvas(keys='interactive', bgcolor='grey',
+                               size=(800, 600), show=True)
+
+    view = canvas.central_widget.add_view()
+    view.camera = 'arcball'
+    plot = scene.Line(np.array([x, y, z]).T, parent=view.scene, color='red')
+    #plot2 = scene.Line(magnetic_field*1e13, parent=view.scene, color='blue')
+    sphere1 = scene.visuals.Sphere(radius=6400 * 1e3, method='latitude', parent=view.scene,
+                                   edge_color='black')
+    view.camera.set_range(x=[-6400 * 1e4, 6400 * 1e4])
+    text1 = scene.visuals.Text("Proton trajectory in Earths's dipole magnetic field", pos=(250, 15), font_size=14,
+                               color='black', parent=canvas.scene)
+    grid = canvas.central_widget.add_grid()
+    canvas.app.run()
+
+
 x0 = 6400 * 1e3 * 3
 y0 = 6400 * 1e3 * 3
 z0 = 6400 * 1e3 * 3
@@ -88,7 +108,7 @@ v_0_x = 1.38 * 1e7 / np.sqrt(3)
 v_0_y = 1.38 * 1e7 / np.sqrt(3)
 v_0_z = 1.38 * 1e7 / np.sqrt(3)
 initial_cond = [x0, v_0_x, y0, v_0_y, z0, v_0_z]
-t = np.linspace(0, 1000, 10000)
+t = np.linspace(0, 100, 10000)
 sol = odeint(eqn, initial_cond, t)
 
 x = sol[:, 0]
@@ -97,9 +117,12 @@ z = sol[:, 4]
 v_x = sol[:, 1]
 v_y = sol[:, 3]
 v_z = sol[:, 5]
-plot_xyz(t, x, y, z)
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-plot_sphere()
-ax.plot(x, y, z)
-plt.show()
+
+#plot_xyz(t, x, y, z)
+#fig = plt.figure()
+#ax = fig.add_subplot(111, projection='3d')
+#plot_sphere()
+#ax.plot(x, y, z)
+#ax.plot(magnetic_field[:, 0]*1e13, magnetic_field[:, 1]*1e13, magnetic_field[:, 2]*1e13)
+#plt.show()
+plot_with_gpu(x, y, z)
