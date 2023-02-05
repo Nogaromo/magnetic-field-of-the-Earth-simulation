@@ -1,15 +1,19 @@
 import sys
+import os
 import numpy as np
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from scipy.integrate import odeint
-from mpl_toolkits import mplot3d
-from vispy import plot as vp
-import vispy
-from vispy import scene
+#from mpl_toolkits import mplot3d
+#from vispy import plot as vp
+#import vispy
+#from vispy import scene
 from tqdm import tqdm
-import vispy.io as io
+#import vispy.io as io
 import imageio
-vispy.app.use_app("pyqt6")
+#from pyface.qt import QtGui, QtCore
+from mayavi.mlab import quiver3d
+from mayavi import mlab
+#vispy.app.use_app("pyqt5")
 
 
 g_1_0 = -29404.8 * 1e-9
@@ -36,20 +40,25 @@ def transform(theta, phi):
 
 # Plots lines of the magnetic field
 def plot_B(B, r, theta, phi, show=True, save=False):
+
     c = 0
+    x = np.zeros(r.shape[0] * theta.shape[0] * phi.shape[0])
+    y = np.zeros(r.shape[0] * theta.shape[0] * phi.shape[0])
+    z = np.zeros(r.shape[0] * theta.shape[0] * phi.shape[0])
     for i in tqdm(range(r.shape[0])):
         for j in range(theta.shape[0]):
             for k in range(phi.shape[0]):
-                B_curr = B[c]
-                x = r[i] * np.sin(theta[j]) * np.cos(phi[k])
-                y = r[i] * np.sin(theta[j]) * np.sin(phi[k])
-                z = r[i] * np.cos(theta[j])
+                x[c] = r[i] * np.sin(theta[j]) * np.cos(phi[k])
+                y[c] = r[i] * np.sin(theta[j]) * np.sin(phi[k])
+                z[c] = r[i] * np.cos(theta[j])
                 c += 1
-                ax.quiver(x, y, z, 1e11 * B_curr[0], 1e11 * B_curr[1], 1e11 * B_curr[2], color='r', length=100)
+
     if show:
-        plt.show()
-    if save:
-        plt.savefig('magnetic_lines.png', dpi=600)
+        quiver3d(x, y, z, B[:, 0], B[:, 1], B[:, 2])
+        plot_sphere()
+        #mlab.show()
+    #if save:
+        #plt.savefig('magnetic_lines.png', dpi=600)
 
 
 # Returns magnetic field in Cartesian coordinate system
@@ -84,11 +93,13 @@ def plot_xyz(t, x, y, z):
     plt.show()
 
 
-# Creates sphere (matplotlib)
-def plot_sphere(r=6400 * 1e3):
-    plt.rcParams["figure.autolayout"] = True
-    u, v = np.mgrid[0:2 * np.pi:30j, 0:np.pi:20j]
-    ax.plot_surface(r * np.cos(u) * np.sin(v), r * np.sin(u) * np.sin(v), r * np.cos(v), cmap=plt.cm.YlGnBu_r)
+# Creates sphere (mayavi)
+def plot_sphere(r=6400 * 1e3, x_0=0, y_0=0, z_0=0):
+    [phi, theta] = np.mgrid[0:2 * np.pi:12j, 0:np.pi:12j]
+    x = np.cos(phi) * np.sin(theta)
+    y = np.sin(phi) * np.sin(theta)
+    z = np.cos(theta)
+    mlab.mesh(r * x + x_0, r * y + y_0, r * z + z_0, colormap='gist_earth')
 
 
 # Creates sphere and proton trajectory plot with OpenGL
@@ -133,17 +144,31 @@ def plot_with_gpu(solutions, canvas=None, magnetic_field=None, save=False):
 
 
 # Plots particles trajectories
-def particles_trajectories(initial_conditions, plot=True, save=False):
+def particles_trajectories(initial_conditions, t_0=100, plot=True, save=False, axes=True, show=True):
     solutions = []
-    t = np.linspace(0, 100, 100000)
+    t = np.linspace(0, t_0, 10000)
     for initial_cond in initial_conditions:
         sol = odeint(eqn, initial_cond, t)
         solutions.append(sol)
-    if plot:
-        canvas = scene.SceneCanvas(keys='interactive', bgcolor='white',
-                                   size=(1280, 720), show=True)
-        plot_with_gpu(solutions, canvas=canvas, magnetic_field=None, save=save)
-        canvas.app.run()
+
+    for solution in solutions:
+        x = np.array(solution[:, 0])
+        y = np.array(solution[:, 2])
+        z = np.array(solution[:, 4])
+        n1, n2, n3 = np.random.rand(3)
+        mlab.plot3d(x, y, z, tube_radius=None, color=(n1, n2, n3))
+    if axes:
+        mlab.axes(line_width=2)
+    if save:
+        mlab.savefig(filename='trajectories.png', size=(1920, 1080))
+    if show:
+        mlab.show()
+
+
+        #canvas = scene.SceneCanvas(keys='interactive', bgcolor='white',
+                                   #size=(1280, 720), show=True)
+        #plot_with_gpu(solutions, canvas=canvas, magnetic_field=None, save=save)
+        #canvas.app.run()
 
 
 def magnetic_field(r, theta, phi):
@@ -169,7 +194,7 @@ v_0_x = 1.38 * 1e7 / np.sqrt(3)
 v_0_y = 1.38 * 1e7 / np.sqrt(3)
 v_0_z = 1.38 * 1e7 / np.sqrt(3)
 initial_cond = [x0, v_0_x, y0, v_0_y, z0, v_0_z]
-t = np.linspace(0, 100, 10000)
+t = np.linspace(0, 10, 1000)
 sol = odeint(eqn, initial_cond, t)
 
 x = sol[:, 0]
@@ -180,15 +205,14 @@ v_y = sol[:, 3]
 v_z = sol[:, 5]
 
 #plot_xyz(t, x, y, z)
-fig = plt.figure(figsize=(16, 9))
-ax = fig.add_subplot(111, projection='3d')
-plot_sphere()
+#fig = plt.figure(figsize=(16, 9))
+#ax = fig.add_subplot(111, projection='3d')
+#plot_sphere()
 #ax.plot(x, y, z)
 theta = np.array([x * np.pi / 20 for x in range(20)])
 phi = np.array([x * np.pi / 5 for x in range(10)])
-r = np.array([6400 * 1e3 * (2 + x) for x in range(2, 4)])
-plot_B(B=magnetic_field(r, theta, phi), r=r, theta=theta, phi=phi, show=False, save=False)
-
+r = np.array([6400 * 1e3 * (2 + x) for x in range(2, 6)])
+plot_B(B=magnetic_field(r, theta, phi), r=r, theta=theta, phi=phi, show=True, save=False)
 x0 = 6400 * 1e3 * 3
 y0 = 6400 * 1e3 * 3
 z0 = 6400 * 1e3 * 3
@@ -198,5 +222,7 @@ v_0_z = 1.38 * 1e7 / np.sqrt(3)
 proton_1 = [x0, v_0_x, y0, v_0_y, z0, v_0_z]
 proton_2 = [x0 / 2, v_0_x, y0 / 2, v_0_y, z0 / 2, v_0_z]
 proton_3 = [-8000 * 1e3 * np.sqrt(2), 0, -8000 * 1e3, 0, z0, 1.38 * 1e7]
+
 initial_conditions = [proton_1, proton_2, proton_3]
-particles_trajectories(initial_conditions, save=True)
+#initial_conditions = [proton_1]
+particles_trajectories(initial_conditions, save=True, t_0=100)
