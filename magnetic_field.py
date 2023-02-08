@@ -1,18 +1,22 @@
 import sys
 import os
 import numpy as np
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 from scipy.integrate import odeint
-#from mpl_toolkits import mplot3d
-#from vispy import plot as vp
-#import vispy
-#from vispy import scene
+from mpl_toolkits import mplot3d
+from vispy import plot as vp
+import vispy
+from vispy import scene
 from tqdm import tqdm
-#import vispy.io as io
+import vispy.io as io
 import imageio
-#from pyface.qt import QtGui, QtCore
+import plotly.graph_objects as go
+from pyface.qt import QtGui, QtCore
 from mayavi.mlab import quiver3d
 from mayavi import mlab
+import plotly.io as pio
+pio.renderers.default = "browser"
+
 #vispy.app.use_app("pyqt5")
 
 
@@ -65,7 +69,7 @@ def plot_B(B, r, theta, phi, show=True, save=False):
 def B_xyz(x, y, z):
     r = np.sqrt(x**2+y**2+z**2)
     theta = np.arccos(z / r)
-    phi = np.arctan(y / x) if x > 0 else np.arctan(y / x) + np.pi
+    phi = np.arctan(y / (x + 1e-3)) if x > 0 else np.arctan(y / (x + 1e-3)) + np.pi
     B_spher = B_dip(r, theta, phi)
     C = transform(theta, phi)
     B = B_spher @ C
@@ -96,10 +100,10 @@ def plot_xyz(t, x, y, z):
 # Creates sphere (mayavi)
 def plot_sphere(r=6400 * 1e3, x_0=0, y_0=0, z_0=0):
     [phi, theta] = np.mgrid[0:2 * np.pi:12j, 0:np.pi:12j]
-    x = np.cos(phi) * np.sin(theta)
-    y = np.sin(phi) * np.sin(theta)
-    z = np.cos(theta)
-    mlab.mesh(r * x + x_0, r * y + y_0, r * z + z_0, colormap='gist_earth')
+    x = r * np.cos(phi) * np.sin(theta)
+    y = r * np.sin(phi) * np.sin(theta)
+    z = r * np.cos(theta)
+    mlab.mesh(x + x_0, y + y_0, z + z_0, colormap='gist_earth')
 
 
 # Creates sphere and proton trajectory plot with OpenGL
@@ -144,7 +148,7 @@ def plot_with_gpu(solutions, canvas=None, magnetic_field=None, save=False):
 
 
 # Plots particles trajectories
-def particles_trajectories(initial_conditions, t_0=100, plot=True, save=False, axes=True, show=True):
+def particles_trajectories(initial_conditions, t_0=100, traj_plot=True, save=False, axes=True, show=True):
     solutions = []
     t = np.linspace(0, t_0, 10000)
     for initial_cond in initial_conditions:
@@ -156,7 +160,8 @@ def particles_trajectories(initial_conditions, t_0=100, plot=True, save=False, a
         y = np.array(solution[:, 2])
         z = np.array(solution[:, 4])
         n1, n2, n3 = np.random.rand(3)
-        mlab.plot3d(x, y, z, tube_radius=None, color=(n1, n2, n3))
+        if traj_plot:
+            mlab.plot3d(x, y, z, tube_radius=None, color=(n1, n2, n3))
     if axes:
         mlab.axes(line_width=2)
     if save:
@@ -172,12 +177,23 @@ def particles_trajectories(initial_conditions, t_0=100, plot=True, save=False, a
 
 
 def magnetic_field(r, theta, phi):
-    n = r.shape[0] * theta.shape[0] * phi.shape[0]
+    try:
+        n_r = r.shape[0]
+        n_theta = theta.shape[0]
+        n_phi = phi.shape[0]
+    except IndexError:
+        n_r = 1
+        n_theta = 1
+        n_phi = 1
+        r = [r]
+        theta = [theta]
+        phi = [phi]
+    n = n_r * n_theta * n_phi
     B = np.zeros((n, 3))
     count = 0
-    for i in tqdm(range(r.shape[0])):
-        for j in range(theta.shape[0]):
-            for k in range(phi.shape[0]):
+    for i in tqdm(range(n_r)):
+        for j in range(n_theta):
+            for k in range(n_phi):
                 B_spher = B_dip(r[i], theta[j], phi[k])
                 C = transform(theta[j], phi[k])
                 B_xyz = B_spher @ C
@@ -187,6 +203,31 @@ def magnetic_field(r, theta, phi):
     return B
 
 
+def magn_lines(start_point, step=1e5):
+    r, theta, phi = start_point
+    x = r * np.sin(theta) * np.cos(phi)
+    y = r * np.sin(theta) * np.sin(phi)
+    z = r * np.cos(theta)
+    line = []
+    line.append(np.array([x, y, z]))
+    B_start = B_xyz(x, y, z)
+    approx_steps = int(np.pi * r)
+    i = 1
+    while True:
+        new_point = line[-1] + step * B_start / np.linalg.norm(B_start)
+        line.append(new_point)
+        i += 1
+        B_start = B_xyz(*new_point)
+        if line[-1][0] < 1e-2 and line[-1][1] < 1e-2:
+            break
+    return line
+
+
+start = np.array([6400*1e3*1.5, 0, 0])
+line = np.array(magn_lines(start))
+mlab.plot3d(line[:, 0], line[:, 1], line[:, 2], tube_radius=None)
+plot_sphere()
+mlab.show()
 x0 = 6400 * 1e3 * 3
 y0 = 6400 * 1e3 * 3
 z0 = 6400 * 1e3 * 3
@@ -209,10 +250,34 @@ v_z = sol[:, 5]
 #ax = fig.add_subplot(111, projection='3d')
 #plot_sphere()
 #ax.plot(x, y, z)
-theta = np.array([x * np.pi / 20 for x in range(20)])
-phi = np.array([x * np.pi / 5 for x in range(10)])
-r = np.array([6400 * 1e3 * (2 + x) for x in range(2, 6)])
-plot_B(B=magnetic_field(r, theta, phi), r=r, theta=theta, phi=phi, show=True, save=False)
+theta = np.array([x * np.pi / 40 for x in range(40)])
+phi = np.array([x * np.pi / 3 for x in range(6)])
+r = np.array([6400 * 1e3 * (1 + x) for x in range(1, 3)])
+c = 0
+x_ = np.zeros(r.shape[0] * theta.shape[0] * phi.shape[0])
+y_ = np.zeros(r.shape[0] * theta.shape[0] * phi.shape[0])
+z_ = np.zeros(r.shape[0] * theta.shape[0] * phi.shape[0])
+for i in tqdm(range(r.shape[0])):
+    for j in range(theta.shape[0]):
+        for k in range(phi.shape[0]):
+            x_[c] = r[i] * np.sin(theta[j]) * np.cos(phi[k])
+            y_[c] = r[i] * np.sin(theta[j]) * np.sin(phi[k])
+            z_[c] = r[i] * np.cos(theta[j])
+            c += 1
+
+
+#fig = plt.figure(figsize=(16, 9))
+#ax = fig.add_subplot(111, projection='3d')
+B = magnetic_field(r, theta, phi)
+
+
+
+#test_flow()
+#mlab.axes()
+#mlab.show()
+#ax.quiver(x_, y_, z_, B[:, 0]*1e11, B[:, 1]*1e11, B[:, 2]*1e11)
+#plt.show()
+#plot_B(B=B, r=r, theta=theta, phi=phi, show=True, save=False)
 x0 = 6400 * 1e3 * 3
 y0 = 6400 * 1e3 * 3
 z0 = 6400 * 1e3 * 3
@@ -224,5 +289,9 @@ proton_2 = [x0 / 2, v_0_x, y0 / 2, v_0_y, z0 / 2, v_0_z]
 proton_3 = [-8000 * 1e3 * np.sqrt(2), 0, -8000 * 1e3, 0, z0, 1.38 * 1e7]
 
 initial_conditions = [proton_1, proton_2, proton_3]
+
+
+
+
 #initial_conditions = [proton_1]
-particles_trajectories(initial_conditions, save=True, t_0=100)
+#particles_trajectories(initial_conditions, save=False, t_0=100, traj_plot=False)
