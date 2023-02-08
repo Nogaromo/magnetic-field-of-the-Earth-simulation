@@ -23,6 +23,7 @@ pio.renderers.default = "browser"
 g_1_0 = -29404.8 * 1e-9
 g_1_1 = -1450.9 * 1e-9
 h_1_1 = 4652.5 * 1e-9
+Re = 6400 * 1e3
 
 
 # Dipole component of Earth's magnetic field in spherical coords
@@ -99,7 +100,7 @@ def plot_xyz(t, x, y, z):
 
 # Creates sphere (mayavi)
 def plot_sphere(r=6400 * 1e3, x_0=0, y_0=0, z_0=0):
-    [phi, theta] = np.mgrid[0:2 * np.pi:12j, 0:np.pi:12j]
+    [phi, theta] = np.mgrid[0:2 * np.pi:30j, 0:np.pi:30j]
     x = r * np.cos(phi) * np.sin(theta)
     y = r * np.sin(phi) * np.sin(theta)
     z = r * np.cos(theta)
@@ -150,7 +151,7 @@ def plot_with_gpu(solutions, canvas=None, magnetic_field=None, save=False):
 # Plots particles trajectories
 def particles_trajectories(initial_conditions, t_0=100, traj_plot=True, save=False, axes=True, show=True):
     solutions = []
-    t = np.linspace(0, t_0, 10000)
+    t = np.linspace(0, t_0, t_0*100)
     for initial_cond in initial_conditions:
         sol = odeint(eqn, initial_cond, t)
         solutions.append(sol)
@@ -203,31 +204,53 @@ def magnetic_field(r, theta, phi):
     return B
 
 
-def magn_lines(start_point, step=1e5):
-    r, theta, phi = start_point
-    x = r * np.sin(theta) * np.cos(phi)
-    y = r * np.sin(theta) * np.sin(phi)
-    z = r * np.cos(theta)
-    line = []
-    line.append(np.array([x, y, z]))
-    B_start = B_xyz(x, y, z)
-    approx_steps = int(np.pi * r)
-    i = 1
-    while True:
-        new_point = line[-1] + step * B_start / np.linalg.norm(B_start)
-        line.append(new_point)
-        i += 1
-        B_start = B_xyz(*new_point)
-        if line[-1][0] < 1e-2 and line[-1][1] < 1e-2:
-            break
-    return line
+def magn_lines(start_points, step=1e5, R_bound = 6400*1e3*15):
+    global Re
+    lines = []
+    for point in start_points:
+        r, theta, phi = point
+        x = r * np.sin(theta) * np.cos(phi)
+        y = r * np.sin(theta) * np.sin(phi)
+        z = r * np.cos(theta)
+        line = []
+        line.append(np.array([x, y, z]))
+        B_start = B_xyz(x, y, z)
+        theta = np.arccos(line[-1][2] / r)
+        step = -step if theta < np.pi / 2 else step
+        while Re <= r <= R_bound:
+            new_point = line[-1] + step * B_start / np.linalg.norm(B_start)
+            line.append(new_point)
+            B_start = B_xyz(*new_point)
+            r = np.linalg.norm(new_point)
+        lines.append(line)
+    return lines
 
 
-start = np.array([6400*1e3*1.5, 0, 0])
-line = np.array(magn_lines(start))
-mlab.plot3d(line[:, 0], line[:, 1], line[:, 2], tube_radius=None)
-plot_sphere()
-mlab.show()
+def plot_magnetic_field_lines(theta, phi):
+    start_points = []
+    for i in range(theta.shape[0]):
+        for j in range(phi.shape[0]):
+            theta_ = theta[i]
+            phi_ = phi[j]
+            point = np.array([6400 * 1e3, theta_, phi_])
+            start_points.append(point)
+    lines = magn_lines(start_points)
+    for line in lines:
+        line = np.array(line)
+        if line.shape[0] == 2:
+            pass
+        else:
+            mlab.plot3d(line[:, 0], line[:, 1], line[:, 2], tube_radius=None, color=(0.1, 0.3, 0.5))
+    plot_sphere()
+
+
+theta_1 = [0, np.pi / 6]
+theta_2 = [np.pi, 5*np.pi/6]
+theta = np.concatenate((theta_1, theta_2[::-1]), axis=None)
+phi = np.array([x * np.pi / 3 for x in range(6)])
+plot_magnetic_field_lines(theta, phi)
+
+
 x0 = 6400 * 1e3 * 3
 y0 = 6400 * 1e3 * 3
 z0 = 6400 * 1e3 * 3
@@ -245,11 +268,7 @@ v_x = sol[:, 1]
 v_y = sol[:, 3]
 v_z = sol[:, 5]
 
-#plot_xyz(t, x, y, z)
-#fig = plt.figure(figsize=(16, 9))
-#ax = fig.add_subplot(111, projection='3d')
-#plot_sphere()
-#ax.plot(x, y, z)
+
 theta = np.array([x * np.pi / 40 for x in range(40)])
 phi = np.array([x * np.pi / 3 for x in range(6)])
 r = np.array([6400 * 1e3 * (1 + x) for x in range(1, 3)])
@@ -265,19 +284,8 @@ for i in tqdm(range(r.shape[0])):
             z_[c] = r[i] * np.cos(theta[j])
             c += 1
 
-
-#fig = plt.figure(figsize=(16, 9))
-#ax = fig.add_subplot(111, projection='3d')
 B = magnetic_field(r, theta, phi)
 
-
-
-#test_flow()
-#mlab.axes()
-#mlab.show()
-#ax.quiver(x_, y_, z_, B[:, 0]*1e11, B[:, 1]*1e11, B[:, 2]*1e11)
-#plt.show()
-#plot_B(B=B, r=r, theta=theta, phi=phi, show=True, save=False)
 x0 = 6400 * 1e3 * 3
 y0 = 6400 * 1e3 * 3
 z0 = 6400 * 1e3 * 3
@@ -289,9 +297,5 @@ proton_2 = [x0 / 2, v_0_x, y0 / 2, v_0_y, z0 / 2, v_0_z]
 proton_3 = [-8000 * 1e3 * np.sqrt(2), 0, -8000 * 1e3, 0, z0, 1.38 * 1e7]
 
 initial_conditions = [proton_1, proton_2, proton_3]
-
-
-
-
-#initial_conditions = [proton_1]
-#particles_trajectories(initial_conditions, save=False, t_0=100, traj_plot=False)
+#les_trajectories(initial_conditions, save=True, t_0=100, traj_plot=True, axes=False)
+mlab.show()
